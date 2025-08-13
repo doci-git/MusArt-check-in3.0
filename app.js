@@ -6,11 +6,7 @@ const DEVICES = [
     storage_key: "shelly_clicks_left_1",
     button_id: "MainDoor",
     log_id: "log1",
-    label: "Porta Principale",
-    msg_remaining: (n) =>
-      `Per la porta principale ti restano ${n} aperture disponibili.`,
-    msg_finished:
-      "Hai usato tutte le aperture per la porta principale. Contatta il supporto.",
+    popup_id: "popup_MainDoor",
   },
   {
     id: "34945478d595",
@@ -19,32 +15,48 @@ const DEVICES = [
     storage_key: "shelly_clicks_left_2",
     button_id: "AptDoor",
     log_id: "log2",
-    label: "Porta Appartamento",
-    msg_remaining: (n) => `Per l'appartamento puoi ancora aprire ${n} volte.`,
-    msg_finished:
-      "Aperture per l'appartamento terminate. Chiama per assistenza.",
+    popup_id: "popup_AptDoor",
   },
 ];
 
-const MAX_CLICKS = 3;
-const MAX_TIME_MS = 1 * 60 * 1000; // 24 ore in millisecondi
+const MAX_CLICKS = 30;
 const BASE_URL_SET =
   "https://shelly-73-eu.shelly.cloud/v2/devices/api/set/switch";
 const CORRECT_CODE = "2245";
 
+// PROVA: tempo massimo 1 minuto
+const TIME_LIMIT_MINUTES = 1;
+
+// ========== BLOCCO TOTALE ==========
+function blockPageCompletely() {
+  document.head.innerHTML = "";
+  document.body.innerHTML = "";
+  document.body.style.backgroundColor = "black";
+  document.body.style.color = "white";
+  document.body.style.display = "flex";
+  document.body.style.justifyContent = "center";
+  document.body.style.alignItems = "center";
+  document.body.style.height = "100vh";
+  document.body.style.fontSize = "22px";
+  document.body.style.textAlign = "center";
+  document.body.textContent = "⏰ Tempo di prova scaduto! Pagina bloccata.";
+  window.stop();
+}
+
+function checkTimeLimit() {
+  const startTime = localStorage.getItem("usage_start_time");
+  if (!startTime) return false;
+  const elapsedMinutes = (Date.now() - parseInt(startTime, 10)) / (1000 * 60);
+  if (elapsedMinutes >= TIME_LIMIT_MINUTES) {
+    blockPageCompletely();
+    return true;
+  }
+  return false;
+}
+
+// ========== GESTIONE CLICK ==========
 function log(msg, logElementId) {
   document.getElementById(logElementId).textContent = msg;
-}
-
-function showPopup(device, title, text) {
-  document.getElementById(`popup-title-${device.button_id}`).textContent =
-    title;
-  document.getElementById(`popup-text-${device.button_id}`).textContent = text;
-  document.getElementById(`popup-${device.button_id}`).style.display = "flex";
-}
-
-function closePopup(buttonId) {
-  document.getElementById(`popup-${buttonId}`).style.display = "none";
 }
 
 function getClicksLeft(storageKey) {
@@ -56,60 +68,48 @@ function setClicksLeft(storageKey, count) {
   localStorage.setItem(storageKey, count);
 }
 
-function aggiornaStatoPulsante(clicksLeft, device) {
-  const btn = document.getElementById(device.button_id);
+function showDevicePopup(popupId, clicksLeft) {
+  const popup = document.getElementById(popupId);
+  if (!popup) return;
+  popup.querySelector(".popup-message").textContent =
+    clicksLeft <= 0
+      ? "Hai esaurito i click. Contatta il supporto."
+      : `Ti restano ${clicksLeft} click.`;
+  popup.style.display = "flex";
+}
+
+function closeAllPopups() {
+  document.querySelectorAll(".popup").forEach((p) => {
+    p.style.display = "none";
+  });
+}
+
+function aggiornaStatoPulsante(clicksLeft, buttonId, popupId) {
+  const btn = document.getElementById(buttonId);
   if (clicksLeft <= 0) {
     btn.disabled = true;
-    showPopup(device, "Click esauriti!", device.msg_finished);
+    showDevicePopup(popupId, clicksLeft);
   } else {
     btn.disabled = false;
   }
 }
 
-function tempoScaduto() {
-  const startTime = localStorage.getItem("start_time");
-  if (!startTime) return false;
-  return Date.now() - parseInt(startTime, 10) > MAX_TIME_MS;
-}
-
-function bloccaTuttoPerTempo() {
-  DEVICES.forEach((device) => {
-    document.getElementById(device.button_id).disabled = true;
-  });
-  alert(
-    "Tempo massimo di utilizzo (24 ore) scaduto. Accesso non più disponibile."
-  );
-}
-
 async function accendiShelly(device) {
-  // Controlla tempo massimo
-  if (tempoScaduto()) {
-    bloccaTuttoPerTempo();
-    return;
-  }
+  if (checkTimeLimit()) return;
 
-  // Salva orario del primo click se non esiste
-  if (!localStorage.getItem("start_time")) {
-    localStorage.setItem("start_time", Date.now());
+  if (!localStorage.getItem("usage_start_time")) {
+    localStorage.setItem("usage_start_time", Date.now());
   }
 
   let clicksLeft = getClicksLeft(device.storage_key);
   if (clicksLeft <= 0) {
-    aggiornaStatoPulsante(clicksLeft, device);
+    aggiornaStatoPulsante(clicksLeft, device.button_id, device.popup_id);
     return;
   }
 
   clicksLeft--;
   setClicksLeft(device.storage_key, clicksLeft);
-  aggiornaStatoPulsante(clicksLeft, device);
-
-  if (clicksLeft > 0) {
-    showPopup(
-      device,
-      `Apertura ${device.label}`,
-      device.msg_remaining(clicksLeft)
-    );
-  }
+  aggiornaStatoPulsante(clicksLeft, device.button_id, device.popup_id);
 
   try {
     const response = await fetch(BASE_URL_SET, {
@@ -146,18 +146,20 @@ async function accendiShelly(device) {
 }
 
 function abilitaPulsanti() {
-  if (tempoScaduto()) {
-    bloccaTuttoPerTempo();
-    return;
-  }
   DEVICES.forEach((device) => {
-    aggiornaStatoPulsante(getClicksLeft(device.storage_key), device);
+    aggiornaStatoPulsante(
+      getClicksLeft(device.storage_key),
+      device.button_id,
+      device.popup_id
+    );
     document.getElementById(device.button_id).onclick = () =>
       accendiShelly(device);
   });
 }
 
 document.getElementById("btnCheckCode").onclick = () => {
+  if (checkTimeLimit()) return;
+
   const insertedCode = document.getElementById("authCode").value.trim();
   if (insertedCode === CORRECT_CODE) {
     document.getElementById("controlPanel").style.display = "block";
@@ -171,3 +173,8 @@ document.getElementById("btnCheckCode").onclick = () => {
     alert("Codice errato!.");
   }
 };
+
+// Avvio
+if (!checkTimeLimit()) {
+  closeAllPopups();
+}
