@@ -27,16 +27,15 @@ const DEVICES = [
 ];
 
 const MAX_CLICKS = 3;
+const MAX_TIME_MS = 1 * 60 * 1000; // 24 ore in millisecondi
 const BASE_URL_SET =
   "https://shelly-73-eu.shelly.cloud/v2/devices/api/set/switch";
-
-const CORRECT_CODE = "2245"; // Password unica
+const CORRECT_CODE = "2245";
 
 function log(msg, logElementId) {
   document.getElementById(logElementId).textContent = msg;
 }
 
-// Mostra popup per un device
 function showPopup(device, title, text) {
   document.getElementById(`popup-title-${device.button_id}`).textContent =
     title;
@@ -46,6 +45,15 @@ function showPopup(device, title, text) {
 
 function closePopup(buttonId) {
   document.getElementById(`popup-${buttonId}`).style.display = "none";
+}
+
+function getClicksLeft(storageKey) {
+  const stored = localStorage.getItem(storageKey);
+  return stored === null ? MAX_CLICKS : parseInt(stored, 10);
+}
+
+function setClicksLeft(storageKey, count) {
+  localStorage.setItem(storageKey, count);
 }
 
 function aggiornaStatoPulsante(clicksLeft, device) {
@@ -58,18 +66,34 @@ function aggiornaStatoPulsante(clicksLeft, device) {
   }
 }
 
-function getClicksLeft(storageKey) {
-  const stored = localStorage.getItem(storageKey);
-  return stored === null ? MAX_CLICKS : parseInt(stored, 10);
+function tempoScaduto() {
+  const startTime = localStorage.getItem("start_time");
+  if (!startTime) return false;
+  return Date.now() - parseInt(startTime, 10) > MAX_TIME_MS;
 }
 
-function setClicksLeft(storageKey, count) {
-  localStorage.setItem(storageKey, count);
+function bloccaTuttoPerTempo() {
+  DEVICES.forEach((device) => {
+    document.getElementById(device.button_id).disabled = true;
+  });
+  alert(
+    "Tempo massimo di utilizzo (24 ore) scaduto. Accesso non più disponibile."
+  );
 }
 
 async function accendiShelly(device) {
-  let clicksLeft = getClicksLeft(device.storage_key);
+  // Controlla tempo massimo
+  if (tempoScaduto()) {
+    bloccaTuttoPerTempo();
+    return;
+  }
 
+  // Salva orario del primo click se non esiste
+  if (!localStorage.getItem("start_time")) {
+    localStorage.setItem("start_time", Date.now());
+  }
+
+  let clicksLeft = getClicksLeft(device.storage_key);
   if (clicksLeft <= 0) {
     aggiornaStatoPulsante(clicksLeft, device);
     return;
@@ -79,7 +103,6 @@ async function accendiShelly(device) {
   setClicksLeft(device.storage_key, clicksLeft);
   aggiornaStatoPulsante(clicksLeft, device);
 
-  // Mostra messaggio personalizzato
   if (clicksLeft > 0) {
     showPopup(
       device,
@@ -106,14 +129,12 @@ async function accendiShelly(device) {
     }
 
     const text = await response.text();
-
     if (!text) {
       log("door open", device.log_id);
       return;
     }
 
     const data = JSON.parse(text);
-
     if (data.error) {
       log(`Errore API: ${JSON.stringify(data.error)}`, device.log_id);
     } else {
@@ -125,6 +146,10 @@ async function accendiShelly(device) {
 }
 
 function abilitaPulsanti() {
+  if (tempoScaduto()) {
+    bloccaTuttoPerTempo();
+    return;
+  }
   DEVICES.forEach((device) => {
     aggiornaStatoPulsante(getClicksLeft(device.storage_key), device);
     document.getElementById(device.button_id).onclick = () =>
