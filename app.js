@@ -17,7 +17,7 @@ const DEVICES = [
   },
 ];
 
-const MAX_CLICKS = 333;
+const MAX_CLICKS = 3;
 const BASE_URL_SET =
   "https://shelly-73-eu.shelly.cloud/v2/devices/api/set/switch";
 const CORRECT_CODE = "2245"; // Password unica
@@ -86,10 +86,6 @@ function checkTimeLimit() {
 async function accendiShelly(device) {
   if (checkTimeLimit()) return;
 
-  if (!localStorage.getItem("usage_start_time")) {
-    localStorage.setItem("usage_start_time", Date.now());
-  }
-
   let clicksLeft = getClicksLeft(device.storage_key);
 
   if (clicksLeft <= 0) {
@@ -151,6 +147,13 @@ function abilitaPulsanti() {
 document.getElementById("btnCheckCode").onclick = () => {
   const insertedCode = document.getElementById("authCode").value.trim();
   if (insertedCode === CORRECT_CODE) {
+    // Salvo l'orario di accesso quando la password è corretta
+    if (!localStorage.getItem("usage_start_time")) {
+      localStorage.setItem("usage_start_time", Date.now());
+    }
+
+    if (checkTimeLimit()) return;
+
     document.getElementById("controlPanel").style.display = "block";
     document.getElementById("authCode").style.display = "none";
     document.getElementById("authCodeh3").style.display = "none";
