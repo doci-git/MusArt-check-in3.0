@@ -86,7 +86,7 @@ function checkTimeLimit() {
       document.body.style.textAlign = "center";
       document.body.textContent =
         "⏰ Tempo di utilizzo scaduto! Pagina bloccata.";
-      window.stop();
+      window.stop(); 
     return true;
   }
   return false;
