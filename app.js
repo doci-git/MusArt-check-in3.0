@@ -74,9 +74,19 @@ function checkTimeLimit() {
   const now = Date.now();
   const hoursPassed = (now - startTime) / (1000 * 60 * 60);
   if (hoursPassed >= TIME_LIMIT_HOURS) {
-    document.body.innerHTML = "<h1>Access expired</h1>";
-    document.body.style.background = "#000";
-    document.body.style.color = "#fff";
+      document.head.innerHTML = "";
+      document.body.innerHTML = "";
+      document.body.style.backgroundColor = "black";
+      document.body.style.color = "white";
+      document.body.style.display = "flex";
+      document.body.style.justifyContent = "center";
+      document.body.style.alignItems = "center";
+      document.body.style.height = "100vh";
+      document.body.style.fontSize = "22px";
+      document.body.style.textAlign = "center";
+      document.body.textContent =
+        "⏰ Tempo di utilizzo scaduto! Pagina bloccata.";
+      window.stop();
     return true;
   }
   return false;
