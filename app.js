@@ -21,7 +21,7 @@ const MAX_CLICKS = 3;
 const BASE_URL_SET =
   "https://shelly-73-eu.shelly.cloud/v2/devices/api/set/switch";
 const CORRECT_CODE = "2245"; // Password unica
-const TIME_LIMIT_HOURS = 1;
+const TIME_LIMIT_HOURS = 19;
 
 // Log
 function log(msg, logElementId) {
@@ -84,8 +84,7 @@ function checkTimeLimit() {
       document.body.style.height = "100vh";
       document.body.style.fontSize = "22px";
       document.body.style.textAlign = "center";
-      document.body.textContent =
-        "⏰ Tempo di utilizzo scaduto! Pagina bloccata.";
+      document.body.textContent = "⏰ Timeout link expired!.";
       window.stop(); 
     return true;
   }
