@@ -17,11 +17,11 @@ const DEVICES = [
   },
 ];
 
-const MAX_CLICKS = 3333;
+const MAX_CLICKS = 3;
 const BASE_URL_SET =
   "https://shelly-73-eu.shelly.cloud/v2/devices/api/set/switch";
 const CORRECT_CODE = "1234"; // Password unica
-const TIME_LIMIT_HOURS = 2800;
+const TIME_LIMIT_HOURS = 28;
 
 // Log
 function log(msg, logElementId) {
@@ -52,7 +52,7 @@ function closePopup(buttonId) {
 // Click storage
 function getClicksLeft(storageKey) {
   const stored = localStorage.getItem(storageKey);
-  return stored === null ? MAX_CLICKS : parseInt(stored, 3310);
+  return stored === null ? MAX_CLICKS : parseInt(stored, 10);
 }
 
 function setClicksLeft(storageKey, count) {
