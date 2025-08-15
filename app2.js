@@ -23,17 +23,13 @@ const BASE_URL_SET =
   "https://shelly-73-eu.shelly.cloud/v2/devices/api/set/switch";
 const CORRECT_CODE = "2245";
 const TIME_LIMIT_HOURS = 1;
-const SECRET_KEY = "q1w2e3r4t5"; // chiave segreta per hash cookie
+const SECRET_KEY = "chiaveSegreta123"; // usata per hash
 
-// --- Utility Cookie + Hash ---
+// --- Cookie utilities ---
 function setCookie(name, value, hours) {
-  let expires = "";
-  if (hours) {
-    const date = new Date();
-    date.setTime(date.getTime() + hours * 60 * 60 * 1000);
-    expires = "; expires=" + date.toUTCString();
-  }
-  document.cookie = name + "=" + value + expires + "; path=/";
+  const d = new Date();
+  d.setTime(d.getTime() + hours * 60 * 60 * 1000);
+  document.cookie = `${name}=${value};expires=${d.toUTCString()};path=/`;
 }
 
 function getCookie(name) {
@@ -41,55 +37,17 @@ function getCookie(name) {
   return match ? match[2] : null;
 }
 
-// --- Hash SHA-256 ---
-async function sha256(msg) {
-  const buf = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(msg)
-  );
-  return Array.from(new Uint8Array(buf))
+// --- Hash function (SHA-256) ---
+async function sha256(str) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hashBuffer))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
 
-// --- Gestione log ---
-function log(msg, logElementId) {
-  document.getElementById(logElementId).textContent = msg;
-}
-
-// --- Popup ---
-function showDevicePopup(device, clicksLeft) {
-  const popup = document.getElementById(`popup-${device.button_id}`);
-  document.getElementById(`popup-title-${device.button_id}`).innerText =
-    device.button_id;
-  document.getElementById(`popup-text-${device.button_id}`).innerText =
-    clicksLeft > 0
-      ? `You have ${clicksLeft} remaining click.`
-      : `No clicks remaining. Please contact us.`;
-  popup.style.display = "block";
-}
-
-function closePopup(buttonId) {
-  document.getElementById(`popup-${buttonId}`).style.display = "none";
-}
-
-// --- Gestione Click ---
-function getClicksLeft(cookieKey) {
-  const stored = getCookie(cookieKey);
-  return stored === null ? MAX_CLICKS : parseInt(stored, 10);
-}
-
-function setClicksLeft(cookieKey, count) {
-  setCookie(cookieKey, count, TIME_LIMIT_HOURS); // scade insieme al limite
-}
-
-function aggiornaStatoPulsante(device) {
-  const btn = document.getElementById(device.button_id);
-  const clicksLeft = getClicksLeft(device.cookie_key);
-  btn.disabled = clicksLeft <= 0;
-}
-
-// --- Blocco pagina con hash ---
+// --- Blocca pagina ---
 async function checkTimeLimit() {
   const startTime = getCookie("usage_start_time");
   const storedHash = getCookie("usage_hash");
@@ -99,22 +57,70 @@ async function checkTimeLimit() {
   const calcHash = await sha256(startTime + SECRET_KEY);
   if (calcHash !== storedHash) {
     document.body.innerHTML = "⚠️ Cookie manomesso!";
+    window.stop();
     return true;
   }
 
   const now = Date.now();
   const hoursPassed = (now - parseInt(startTime, 10)) / (1000 * 60 * 60);
   if (hoursPassed >= TIME_LIMIT_HOURS) {
-    document.head.innerHTML = "";
-    document.body.innerHTML = "⏰ Timeout link expired!";
-    document.body.style.backgroundColor = "black";
-    document.body.style.color = "white";
+       document.head.innerHTML = "";
+       document.body.innerHTML = "";
+       document.body.style.backgroundColor = "black";
+       document.body.style.color = "white";
+       document.body.style.display = "flex";
+       document.body.style.justifyContent = "center";
+       document.body.style.alignItems = "center";
+       document.body.style.height = "100vh";
+       document.body.style.fontSize = "22px";
+       document.body.style.textAlign = "center";
+       document.body.textContent = "⏰ Timeout link expired!";
+       window.stop();
     return true;
   }
   return false;
 }
 
-// --- Accensione Shelly ---
+// --- Set usage start time + hash ---
+async function setUsageStartTime() {
+  const now = Date.now();
+  setCookie("usage_start_time", now, TIME_LIMIT_HOURS);
+  const hash = await sha256(now + SECRET_KEY);
+  setCookie("usage_hash", hash, TIME_LIMIT_HOURS);
+}
+
+// --- Click e popup ---
+function getClicksLeft(cookieKey) {
+  const stored = getCookie(cookieKey);
+  return stored === null ? MAX_CLICKS : parseInt(stored, 10);
+}
+
+function setClicksLeft(cookieKey, count) {
+  setCookie(cookieKey, count, TIME_LIMIT_HOURS);
+}
+
+function aggiornaStatoPulsante(device) {
+  const btn = document.getElementById(device.button_id);
+  const clicksLeft = getClicksLeft(device.cookie_key);
+  btn.disabled = clicksLeft <= 0;
+}
+
+function showDevicePopup(device, clicksLeft) {
+  const popup = document.getElementById(`popup-${device.button_id}`);
+  document.getElementById(`popup-title-${device.button_id}`).innerText =
+    device.button_id;
+  document.getElementById(`popup-text-${device.button_id}`).innerText =
+    clicksLeft > 0
+      ? `You have ${clicksLeft} remaining click.`
+      : `No clicks remaining.`;
+  popup.style.display = "block";
+}
+
+function closePopup(buttonId) {
+  document.getElementById(`popup-${buttonId}`).style.display = "none";
+}
+
+// --- Accendi Shelly ---
 async function accendiShelly(device) {
   if (await checkTimeLimit()) return;
 
@@ -141,27 +147,23 @@ async function accendiShelly(device) {
         on: true,
       }),
     });
-
-    if (!response.ok) {
-      log(`Errore HTTP: ${response.status}`, device.log_id);
-      return;
-    }
-
     const text = await response.text();
-    if (!text) {
-      log("door open", device.log_id);
-      return;
-    }
-
+    if (!text) return;
     const data = JSON.parse(text);
-    if (data.error) {
-      log(`Errore API: ${JSON.stringify(data.error)}`, device.log_id);
-    } else {
-      log("acceso con successo!", device.log_id);
-    }
+    log(
+      data.error
+        ? `Errore API: ${JSON.stringify(data.error)}`
+        : "Acceso con successo!",
+      device.log_id
+    );
   } catch (err) {
     log(`Errore fetch: ${err.message}`, device.log_id);
   }
+}
+
+// --- Log ---
+function log(msg, logElementId) {
+  document.getElementById(logElementId).textContent = msg;
 }
 
 // --- Abilita pulsanti ---
@@ -177,11 +179,8 @@ function abilitaPulsanti() {
 document.getElementById("btnCheckCode").onclick = async () => {
   const insertedCode = document.getElementById("authCode").value.trim();
   if (insertedCode === CORRECT_CODE) {
-    if (!getCookie("usage_start_time")) {
-      const now = Date.now();
-      setCookie("usage_start_time", now, TIME_LIMIT_HOURS);
-      const hash = await sha256(now + SECRET_KEY);
-      setCookie("usage_hash", hash, TIME_LIMIT_HOURS);
+    if (!getCookie("usage_start_time") || !getCookie("usage_hash")) {
+      await setUsageStartTime();
     }
 
     if (await checkTimeLimit()) return;
@@ -193,18 +192,15 @@ document.getElementById("btnCheckCode").onclick = async () => {
     document.getElementById("important").style.display = "none";
     abilitaPulsanti();
   } else {
-    alert("Codice errato!.");
+    alert("Codice errato!");
   }
 };
 
-// --- Blocco tasto destro ---
-document.addEventListener(
-  "contextmenu",
-  function (e) {
-    e.preventDefault();
-  },
-  false
-);
+// --- Blocca tasto destro ---
+document.addEventListener("contextmenu", (e) => e.preventDefault(), false);
 
-// Controllo immediato su caricamento
+// --- Controllo automatico ogni minuto ---
+setInterval(checkTimeLimit, 60 * 1000);
+
+// --- Controllo immediato su caricamento ---
 checkTimeLimit();
