@@ -22,7 +22,7 @@ const MAX_CLICKS = 3;
 const BASE_URL_SET =
   "https://shelly-73-eu.shelly.cloud/v2/devices/api/set/switch";
 const CORRECT_CODE = "2245";
-const TIME_LIMIT_MINUTES = 2; // test rapido
+const TIME_LIMIT_MINUTES = 20; // per test rapido
 const SECRET_KEY = "chiaveSegreta123";
 
 // --- Cookie utilities ---
@@ -154,8 +154,11 @@ async function accendiShelly(device) {
 function abilitaPulsanti() {
   DEVICES.forEach((device) => {
     aggiornaStatoPulsante(device);
-    document.getElementById(device.button_id).onclick = () =>
+    const btn = document.getElementById(device.button_id);
+    btn.onclick = async () => {
+      if (await checkTimeLimit()) return;
       accendiShelly(device);
+    };
   });
 }
 
@@ -173,6 +176,8 @@ document.getElementById("btnCheckCode").onclick = async () => {
     document.getElementById("authCode").style.display = "none";
     document.getElementById("authCodeh3").style.display = "none";
     document.getElementById("btnCheckCode").style.display = "none";
+    document.getElementById("important").style.display = "none";
+
     abilitaPulsanti();
   } else {
     alert("Codice errato!");
@@ -182,8 +187,13 @@ document.getElementById("btnCheckCode").onclick = async () => {
 // --- Blocca tasto destro ---
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
-// --- Controllo automatico ogni 10 secondi ---
-setInterval(checkTimeLimit, 10 * 1000);
+// --- Controllo automatico ogni 5 secondi ---
+setInterval(checkTimeLimit, 5000);
 
 // --- Controllo immediato su caricamento ---
-checkTimeLimit();
+window.addEventListener("load", async () => {
+  const blocked = await checkTimeLimit();
+  if (!blocked) {
+    DEVICES.forEach((device) => aggiornaStatoPulsante(device));
+  }
+});
