@@ -6,7 +6,6 @@ const DEVICES = [
       "MWI2MDc4dWlk4908A71DA809FCEC05C5D1F360943FBFC6A7934EC0FD9E3CFEAF03F8F5A6A4A0C60665B97A1AA2E2",
     cookie_key: "clicks_MainDoor",
     button_id: "MainDoor",
-    log_id: "log1",
   },
   {
     id: "34945478d595",
@@ -14,7 +13,6 @@ const DEVICES = [
       "MWI2MDc4dWlk4908A71DA809FCEC05C5D1F360943FBFC6A7934EC0FD9E3CFEAF03F8F5A6A4A0C60665B97A1AA2E2",
     cookie_key: "clicks_AptDoor",
     button_id: "AptDoor",
-    log_id: "log2",
   },
 ];
 
@@ -22,19 +20,25 @@ const MAX_CLICKS = 3;
 const BASE_URL_SET =
   "https://shelly-73-eu.shelly.cloud/v2/devices/api/set/switch";
 const CORRECT_CODE = "2245";
-const TIME_LIMIT_MINUTES = 20; // per test rapido
+const TIME_LIMIT_MINUTES = 2;
 const SECRET_KEY = "chiaveSegreta123";
+let timeCheckInterval;
 
 // --- Cookie utilities ---
 function setCookie(name, value, minutes) {
   const d = new Date();
   d.setTime(d.getTime() + minutes * 60 * 1000);
-  document.cookie = `${name}=${value};expires=${d.toUTCString()};path=/`;
+  const secureFlag = location.protocol === "https:" ? ";secure" : "";
+  document.cookie = `${name}=${value};expires=${d.toUTCString()};path=/;samesite=strict${secureFlag}`;
 }
 
 function getCookie(name) {
-  const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
-  return match ? match[2] : null;
+  const cookies = document.cookie.split(";");
+  for (let cookie of cookies) {
+    const [cookieName, cookieValue] = cookie.split("=").map((c) => c.trim());
+    if (cookieName === name) return cookieValue;
+  }
+  return null;
 }
 
 // --- Hash function ---
@@ -51,32 +55,41 @@ async function sha256(str) {
 async function setUsageStartTime() {
   const now = Date.now();
   setCookie("usage_start_time", now, TIME_LIMIT_MINUTES);
-  const hash = await sha256(now + SECRET_KEY);
+  const hash = await sha256(`${now}${SECRET_KEY}`);
   setCookie("usage_hash", hash, TIME_LIMIT_MINUTES);
 }
 
-async function checkTimeLimit() {
+async function validateTime() {
   const startTime = getCookie("usage_start_time");
   const storedHash = getCookie("usage_hash");
 
-  if (!startTime || !storedHash) return false;
+  if (!startTime || !storedHash) return { valid: false };
 
-  const calcHash = await sha256(startTime + SECRET_KEY);
+  const calcHash = await sha256(`${startTime}${SECRET_KEY}`);
   if (calcHash !== storedHash) {
-    document.body.innerHTML = "⚠️ Cookie manomesso!";
-    window.stop();
-    return true;
+    return { valid: false, error: "⚠️ Cookie manomesso!" };
   }
 
   const now = Date.now();
   const minutesPassed = (now - parseInt(startTime, 10)) / (1000 * 60);
+
   if (minutesPassed >= TIME_LIMIT_MINUTES) {
-    document.head.innerHTML = "";
-    document.body.innerHTML = "⏰ Timeout link expired!";
-    window.stop();
+    return { valid: false, error: "⏰ Timeout link expired!" };
+  }
+
+  return { valid: true, timeLeft: TIME_LIMIT_MINUTES - minutesPassed };
+}
+
+async function checkTimeLimit() {
+  const validation = await validateTime();
+
+  if (!validation.valid && validation.error) {
+    document.body.innerHTML = `<div class="error-message">${validation.error}</div>`;
+    clearInterval(timeCheckInterval);
     return true;
   }
-  return false;
+
+  return !validation.valid;
 }
 
 // --- Gestione click ---
@@ -89,7 +102,7 @@ function setClicksLeft(cookieKey, count) {
   setCookie(cookieKey, count, TIME_LIMIT_MINUTES);
 }
 
-function aggiornaStatoPulsante(device) {
+function updateButtonState(device) {
   const btn = document.getElementById(device.button_id);
   const clicksLeft = getClicksLeft(device.cookie_key);
   btn.disabled = clicksLeft <= 0;
@@ -97,13 +110,15 @@ function aggiornaStatoPulsante(device) {
 
 function showDevicePopup(device, clicksLeft) {
   const popup = document.getElementById(`popup-${device.button_id}`);
-  document.getElementById(`popup-title-${device.button_id}`).innerText =
-    device.button_id;
-  document.getElementById(`popup-text-${device.button_id}`).innerText =
+  document.getElementById(`popup-title-${device.button_id}`).textContent =
+    device.button_id.replace(/([A-Z])/g, " $1").trim();
+
+  document.getElementById(`popup-text-${device.button_id}`).textContent =
     clicksLeft > 0
-      ? `You have ${clicksLeft} remaining click.`
+      ? `You have ${clicksLeft} remaining click${clicksLeft > 1 ? "s" : ""}.`
       : `No clicks remaining. Please contact us.`;
-  popup.style.display = "block";
+
+  popup.style.display = "flex";
 }
 
 function closePopup(buttonId) {
@@ -111,19 +126,19 @@ function closePopup(buttonId) {
 }
 
 // --- Accensione Shelly ---
-async function accendiShelly(device) {
+async function activateDevice(device) {
   if (await checkTimeLimit()) return;
 
   let clicksLeft = getClicksLeft(device.cookie_key);
   if (clicksLeft <= 0) {
     showDevicePopup(device, clicksLeft);
-    aggiornaStatoPulsante(device);
+    updateButtonState(device);
     return;
   }
 
   clicksLeft--;
   setClicksLeft(device.cookie_key, clicksLeft);
-  aggiornaStatoPulsante(device);
+  updateButtonState(device);
   showDevicePopup(device, clicksLeft);
 
   try {
@@ -138,62 +153,70 @@ async function accendiShelly(device) {
       }),
     });
 
-    const text = await response.text();
-    const data = text ? JSON.parse(text) : {};
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
     if (data.error) {
-      console.error(`Errore API: ${JSON.stringify(data.error)}`);
-    } else {
-      console.log("acceso con successo!");
+      console.error(`API Error: ${JSON.stringify(data.error)}`);
     }
   } catch (err) {
-    console.error(`Errore fetch: ${err.message}`);
+    console.error(`Error: ${err.message}`);
   }
 }
 
 // --- Abilita pulsanti ---
-function abilitaPulsanti() {
+function enableButtons() {
   DEVICES.forEach((device) => {
-    aggiornaStatoPulsante(device);
+    updateButtonState(device);
     const btn = document.getElementById(device.button_id);
-    btn.onclick = async () => {
+    btn.addEventListener("click", async () => {
       if (await checkTimeLimit()) return;
-      accendiShelly(device);
-    };
+      activateDevice(device);
+    });
   });
 }
 
-// --- Controllo codice ---
-document.getElementById("btnCheckCode").onclick = async () => {
-  const insertedCode = document.getElementById("authCode").value.trim();
-  if (insertedCode === CORRECT_CODE) {
-    if (!getCookie("usage_start_time") || !getCookie("usage_hash")) {
-      await setUsageStartTime();
+// --- Inizializzazione ---
+function init() {
+  // Blocca tasto destro
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  // Controllo codice
+  document
+    .getElementById("btnCheckCode")
+    .addEventListener("click", async () => {
+      const insertedCode = document.getElementById("authCode").value.trim();
+      if (insertedCode === CORRECT_CODE) {
+        if (!getCookie("usage_start_time") || !getCookie("usage_hash")) {
+          await setUsageStartTime();
+        }
+
+        if (await checkTimeLimit()) return;
+
+        document.getElementById("controlPanel").style.display = "block";
+        document.getElementById("authCode").style.display = "none";
+        document.getElementById("authCodeh3").style.display = "none";
+        document.getElementById("btnCheckCode").style.display = "none";
+        document.getElementById("important").style.display = "none";
+
+        enableButtons();
+      } else {
+        alert("Incorrect code!");
+      }
+    });
+
+  // Controllo automatico ogni 5 secondi
+  timeCheckInterval = setInterval(checkTimeLimit, 5000);
+
+  // Controllo iniziale
+  checkTimeLimit().then((blocked) => {
+    if (!blocked) {
+      DEVICES.forEach((device) => updateButtonState(device));
     }
+  });
+}
 
-    if (await checkTimeLimit()) return;
-
-    document.getElementById("controlPanel").style.display = "block";
-    document.getElementById("authCode").style.display = "none";
-    document.getElementById("authCodeh3").style.display = "none";
-    document.getElementById("btnCheckCode").style.display = "none";
-    document.getElementById("important").style.display = "none";
-
-    abilitaPulsanti();
-  } else {
-    alert("Codice errato!");
-  }
-};
-
-// --- Blocca tasto destro ---
-document.addEventListener("contextmenu", (e) => e.preventDefault());
-
-// --- Controllo automatico ogni 5 secondi ---
-setInterval(checkTimeLimit, 5000);
-
-// --- Controllo immediato su caricamento ---
-window.addEventListener("load", async () => {
-  const blocked = await checkTimeLimit();
-  if (!blocked) {
-    DEVICES.forEach((device) => aggiornaStatoPulsante(device));
-  }
-});
+// Avvio quando la pagina è caricata
+window.addEventListener("DOMContentLoaded", init);
