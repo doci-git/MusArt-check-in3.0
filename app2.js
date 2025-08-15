@@ -22,13 +22,13 @@ const MAX_CLICKS = 3;
 const BASE_URL_SET =
   "https://shelly-73-eu.shelly.cloud/v2/devices/api/set/switch";
 const CORRECT_CODE = "2245";
-const TIME_LIMIT_HOURS = 1;
-const SECRET_KEY = "chiaveSegreta123"; // usata per hash
+const TIME_LIMIT_MINUTES = 2; // test rapido
+const SECRET_KEY = "chiaveSegreta123";
 
 // --- Cookie utilities ---
-function setCookie(name, value, hours) {
+function setCookie(name, value, minutes) {
   const d = new Date();
-  d.setTime(d.getTime() + hours * 60 * 60 * 1000);
+  d.setTime(d.getTime() + minutes * 60 * 1000);
   document.cookie = `${name}=${value};expires=${d.toUTCString()};path=/`;
 }
 
@@ -37,7 +37,7 @@ function getCookie(name) {
   return match ? match[2] : null;
 }
 
-// --- Hash function (SHA-256) ---
+// --- Hash function ---
 async function sha256(str) {
   const encoder = new TextEncoder();
   const data = encoder.encode(str);
@@ -47,7 +47,14 @@ async function sha256(str) {
     .join("");
 }
 
-// --- Blocca pagina ---
+// --- Gestione tempo ---
+async function setUsageStartTime() {
+  const now = Date.now();
+  setCookie("usage_start_time", now, TIME_LIMIT_MINUTES);
+  const hash = await sha256(now + SECRET_KEY);
+  setCookie("usage_hash", hash, TIME_LIMIT_MINUTES);
+}
+
 async function checkTimeLimit() {
   const startTime = getCookie("usage_start_time");
   const storedHash = getCookie("usage_hash");
@@ -62,41 +69,24 @@ async function checkTimeLimit() {
   }
 
   const now = Date.now();
-  const hoursPassed = (now - parseInt(startTime, 10)) / (1000 * 60 * 60);
-  if (hoursPassed >= TIME_LIMIT_HOURS) {
-       document.head.innerHTML = "";
-       document.body.innerHTML = "";
-       document.body.style.backgroundColor = "black";
-       document.body.style.color = "white";
-       document.body.style.display = "flex";
-       document.body.style.justifyContent = "center";
-       document.body.style.alignItems = "center";
-       document.body.style.height = "100vh";
-       document.body.style.fontSize = "22px";
-       document.body.style.textAlign = "center";
-       document.body.textContent = "⏰ Timeout link expired!";
-       window.stop();
+  const minutesPassed = (now - parseInt(startTime, 10)) / (1000 * 60);
+  if (minutesPassed >= TIME_LIMIT_MINUTES) {
+    document.head.innerHTML = "";
+    document.body.innerHTML = "⏰ Timeout link expired!";
+    window.stop();
     return true;
   }
   return false;
 }
 
-// --- Set usage start time + hash ---
-async function setUsageStartTime() {
-  const now = Date.now();
-  setCookie("usage_start_time", now, TIME_LIMIT_HOURS);
-  const hash = await sha256(now + SECRET_KEY);
-  setCookie("usage_hash", hash, TIME_LIMIT_HOURS);
-}
-
-// --- Click e popup ---
+// --- Gestione click ---
 function getClicksLeft(cookieKey) {
   const stored = getCookie(cookieKey);
   return stored === null ? MAX_CLICKS : parseInt(stored, 10);
 }
 
 function setClicksLeft(cookieKey, count) {
-  setCookie(cookieKey, count, TIME_LIMIT_HOURS);
+  setCookie(cookieKey, count, TIME_LIMIT_MINUTES);
 }
 
 function aggiornaStatoPulsante(device) {
@@ -112,7 +102,7 @@ function showDevicePopup(device, clicksLeft) {
   document.getElementById(`popup-text-${device.button_id}`).innerText =
     clicksLeft > 0
       ? `You have ${clicksLeft} remaining click.`
-      : `No clicks remaining.`;
+      : `No clicks remaining. Please contact us.`;
   popup.style.display = "block";
 }
 
@@ -120,7 +110,7 @@ function closePopup(buttonId) {
   document.getElementById(`popup-${buttonId}`).style.display = "none";
 }
 
-// --- Accendi Shelly ---
+// --- Accensione Shelly ---
 async function accendiShelly(device) {
   if (await checkTimeLimit()) return;
 
@@ -147,23 +137,17 @@ async function accendiShelly(device) {
         on: true,
       }),
     });
-    const text = await response.text();
-    if (!text) return;
-    const data = JSON.parse(text);
-    log(
-      data.error
-        ? `Errore API: ${JSON.stringify(data.error)}`
-        : "Acceso con successo!",
-      device.log_id
-    );
-  } catch (err) {
-    log(`Errore fetch: ${err.message}`, device.log_id);
-  }
-}
 
-// --- Log ---
-function log(msg, logElementId) {
-  document.getElementById(logElementId).textContent = msg;
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : {};
+    if (data.error) {
+      console.error(`Errore API: ${JSON.stringify(data.error)}`);
+    } else {
+      console.log("acceso con successo!");
+    }
+  } catch (err) {
+    console.error(`Errore fetch: ${err.message}`);
+  }
 }
 
 // --- Abilita pulsanti ---
@@ -189,7 +173,6 @@ document.getElementById("btnCheckCode").onclick = async () => {
     document.getElementById("authCode").style.display = "none";
     document.getElementById("authCodeh3").style.display = "none";
     document.getElementById("btnCheckCode").style.display = "none";
-    document.getElementById("important").style.display = "none";
     abilitaPulsanti();
   } else {
     alert("Codice errato!");
@@ -197,10 +180,10 @@ document.getElementById("btnCheckCode").onclick = async () => {
 };
 
 // --- Blocca tasto destro ---
-document.addEventListener("contextmenu", (e) => e.preventDefault(), false);
+document.addEventListener("contextmenu", (e) => e.preventDefault());
 
-// --- Controllo automatico ogni minuto ---
-setInterval(checkTimeLimit, 60 * 1000);
+// --- Controllo automatico ogni 10 secondi ---
+setInterval(checkTimeLimit, 10 * 1000);
 
 // --- Controllo immediato su caricamento ---
 checkTimeLimit();
