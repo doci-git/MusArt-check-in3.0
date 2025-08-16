@@ -24,75 +24,99 @@ const TIME_LIMIT_MINUTES = 2;
 const SECRET_KEY = "chiaveSegreta123";
 let timeCheckInterval;
 
-// --- Cookie utilities ---
+// --- Funzioni di utilità per i cookie ---
 function setCookie(name, value, minutes) {
   const d = new Date();
   d.setTime(d.getTime() + minutes * 60 * 1000);
-  const secureFlag = location.protocol === "https:" ? ";secure" : "";
-  document.cookie = `${name}=${value};expires=${d.toUTCString()};path=/;samesite=strict${secureFlag}`;
+  const expires = "expires=" + d.toUTCString();
+  const secureFlag = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${name}=${value}; ${expires}; path=/; SameSite=Strict${secureFlag}`;
 }
 
 function getCookie(name) {
-  const cookies = document.cookie.split(";");
-  for (let cookie of cookies) {
-    const [cookieName, cookieValue] = cookie.split("=").map((c) => c.trim());
-    if (cookieName === name) return cookieValue;
+  const nameEQ = name + "=";
+  const ca = document.cookie.split(";");
+  for (let i = 0; i < ca.length; i++) {
+    let c = ca[i];
+    while (c.charAt(0) === " ") c = c.substring(1, c.length);
+    if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
   }
   return null;
 }
 
-// --- Hash function ---
+// --- Funzione hash SHA-256 ---
 async function sha256(str) {
   const encoder = new TextEncoder();
   const data = encoder.encode(str);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// --- Gestione tempo ---
+// --- Imposta il tempo di inizio utilizzo ---
 async function setUsageStartTime() {
-  const now = Date.now();
+  const now = Date.now().toString();
   setCookie("usage_start_time", now, TIME_LIMIT_MINUTES);
-  const hash = await sha256(`${now}${SECRET_KEY}`);
+  const hash = await sha256(now + SECRET_KEY);
   setCookie("usage_hash", hash, TIME_LIMIT_MINUTES);
 }
 
-async function validateTime() {
+// --- Verifica il limite di tempo e l'integrità del cookie ---
+async function checkTimeLimit() {
   const startTime = getCookie("usage_start_time");
   const storedHash = getCookie("usage_hash");
 
-  if (!startTime || !storedHash) return { valid: false };
+  // Se non ci sono cookie, non c'è limite da applicare
+  if (!startTime || !storedHash) {
+    return false;
+  }
 
-  const calcHash = await sha256(`${startTime}${SECRET_KEY}`);
+  // Verifica l'integrità del cookie
+  const calcHash = await sha256(startTime + SECRET_KEY);
   if (calcHash !== storedHash) {
-    return { valid: false, error: "⚠️ Cookie manomesso!" };
+    return { error: "⚠️ Security violation detected!" };
   }
 
+  // Calcola il tempo trascorso
   const now = Date.now();
-  const minutesPassed = (now - parseInt(startTime, 10)) / (1000 * 60);
+  const elapsedMinutes = (now - parseInt(startTime)) / (1000 * 60);
 
-  if (minutesPassed >= TIME_LIMIT_MINUTES) {
-    return { valid: false, error: "⏰ Timeout link expired!" };
+  if (elapsedMinutes >= TIME_LIMIT_MINUTES) {
+    return { error: "⏰ Session expired! Please request a new code." };
   }
 
-  return { valid: true, timeLeft: TIME_LIMIT_MINUTES - minutesPassed };
+  return false;
 }
 
-async function checkTimeLimit() {
-  const validation = await validateTime();
+// --- Mostra un errore irreversibile ---
+function showFatalError(message) {
+  // Ferma l'intervallo di controllo
+  clearInterval(timeCheckInterval);
 
-  if (!validation.valid && validation.error) {
-    document.body.innerHTML = `<div class="error-message">${validation.error}</div>`;
-    clearInterval(timeCheckInterval);
-    return true;
-  }
-
-  return !validation.valid;
+  // Sostituisce l'intero body con il messaggio di errore
+  document.body.innerHTML = `
+    <div style="
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #121111;
+      color: #ff6b6b;
+      font-size: 24px;
+      text-align: center;
+      padding: 20px;
+      z-index: 9999;
+    ">
+      ${message}
+    </div>
+  `;
 }
 
-// --- Gestione click ---
+// --- Gestione dei click rimanenti ---
 function getClicksLeft(cookieKey) {
   const stored = getCookie(cookieKey);
   return stored === null ? MAX_CLICKS : parseInt(stored, 10);
@@ -108,12 +132,19 @@ function updateButtonState(device) {
   btn.disabled = clicksLeft <= 0;
 }
 
+// --- Popup ---
 function showDevicePopup(device, clicksLeft) {
   const popup = document.getElementById(`popup-${device.button_id}`);
-  document.getElementById(`popup-title-${device.button_id}`).textContent =
-    device.button_id.replace(/([A-Z])/g, " $1").trim();
+  const titleElement = document.getElementById(
+    `popup-title-${device.button_id}`
+  );
+  const textElement = document.getElementById(`popup-text-${device.button_id}`);
 
-  document.getElementById(`popup-text-${device.button_id}`).textContent =
+  // Formatta il titolo (es: "MainDoor" -> "Main Door")
+  const formattedTitle = device.button_id.replace(/([A-Z])/g, " $1").trim();
+  titleElement.textContent = formattedTitle;
+
+  textElement.textContent =
     clicksLeft > 0
       ? `You have ${clicksLeft} remaining click${clicksLeft > 1 ? "s" : ""}.`
       : `No clicks remaining. Please contact us.`;
@@ -122,25 +153,33 @@ function showDevicePopup(device, clicksLeft) {
 }
 
 function closePopup(buttonId) {
-  document.getElementById(`popup-${buttonId}`).style.display = "none";
+  const popup = document.getElementById(`popup-${buttonId}`);
+  popup.style.display = "none";
 }
 
-// --- Accensione Shelly ---
+// --- Attivazione dispositivo Shelly ---
 async function activateDevice(device) {
-  if (await checkTimeLimit()) return;
-
-  let clicksLeft = getClicksLeft(device.cookie_key);
-  if (clicksLeft <= 0) {
-    showDevicePopup(device, clicksLeft);
-    updateButtonState(device);
+  // Controlla se c'è un errore di tempo
+  const timeError = await checkTimeLimit();
+  if (timeError) {
+    showFatalError(timeError.error);
     return;
   }
 
+  // Controlla i click rimanenti
+  let clicksLeft = getClicksLeft(device.cookie_key);
+  if (clicksLeft <= 0) {
+    showDevicePopup(device, clicksLeft);
+    return;
+  }
+
+  // Decrementa i click e aggiorna lo stato
   clicksLeft--;
   setClicksLeft(device.cookie_key, clicksLeft);
   updateButtonState(device);
   showDevicePopup(device, clicksLeft);
 
+  // Invia la richiesta per attivare il dispositivo
   try {
     const response = await fetch(BASE_URL_SET, {
       method: "POST",
@@ -150,6 +189,7 @@ async function activateDevice(device) {
         auth_key: device.auth_key,
         channel: 0,
         on: true,
+        turn: "on",
       }),
     });
 
@@ -159,64 +199,76 @@ async function activateDevice(device) {
 
     const data = await response.json();
     if (data.error) {
-      console.error(`API Error: ${JSON.stringify(data.error)}`);
+      console.error("API Error:", data.error);
     }
-  } catch (err) {
-    console.error(`Error: ${err.message}`);
+  } catch (error) {
+    console.error("Error activating device:", error);
   }
 }
 
-// --- Abilita pulsanti ---
-function enableButtons() {
-  DEVICES.forEach((device) => {
-    updateButtonState(device);
-    const btn = document.getElementById(device.button_id);
-    btn.addEventListener("click", async () => {
-      if (await checkTimeLimit()) return;
-      activateDevice(device);
-    });
-  });
+// --- Gestione del codice di autorizzazione ---
+async function handleCodeSubmit() {
+  const insertedCode = document.getElementById("authCode").value.trim();
+  if (insertedCode !== CORRECT_CODE) {
+    alert("Incorrect code! Please try again.");
+    return;
+  }
+
+  // Imposta il tempo di inizio
+  await setUsageStartTime();
+
+  // Verifica immediatamente se c'è un errore (ad esempio, manomissione cookie)
+  const timeError = await checkTimeLimit();
+  if (timeError) {
+    showFatalError(timeError.error);
+    return;
+  }
+
+  // Nascondi il form del codice e mostra il pannello di controllo
+  document.getElementById("controlPanel").style.display = "block";
+  document.getElementById("authCode").style.display = "none";
+  document.getElementById("authCodeh3").style.display = "none";
+  document.getElementById("btnCheckCode").style.display = "none";
+  document.getElementById("important").style.display = "none";
+
+  // Aggiorna lo stato dei pulsanti
+  DEVICES.forEach((device) => updateButtonState(device));
 }
 
-// --- Inizializzazione ---
+// --- Inizializzazione dell'applicazione ---
 function init() {
-  // Blocca tasto destro
+  // Blocca il menu contestuale (tasto destro)
   document.addEventListener("contextmenu", (e) => e.preventDefault());
 
-  // Controllo codice
+  // Imposta gli event listener per i pulsanti
   document
     .getElementById("btnCheckCode")
-    .addEventListener("click", async () => {
-      const insertedCode = document.getElementById("authCode").value.trim();
-      if (insertedCode === CORRECT_CODE) {
-        if (!getCookie("usage_start_time") || !getCookie("usage_hash")) {
-          await setUsageStartTime();
-        }
+    .addEventListener("click", handleCodeSubmit);
 
-        if (await checkTimeLimit()) return;
-
-        document.getElementById("controlPanel").style.display = "block";
-        document.getElementById("authCode").style.display = "none";
-        document.getElementById("authCodeh3").style.display = "none";
-        document.getElementById("btnCheckCode").style.display = "none";
-        document.getElementById("important").style.display = "none";
-
-        enableButtons();
-      } else {
-        alert("Incorrect code!");
-      }
-    });
-
-  // Controllo automatico ogni 5 secondi
-  timeCheckInterval = setInterval(checkTimeLimit, 5000);
-
-  // Controllo iniziale
-  checkTimeLimit().then((blocked) => {
-    if (!blocked) {
-      DEVICES.forEach((device) => updateButtonState(device));
+  // Imposta gli event listener per i pulsanti delle porte
+  DEVICES.forEach((device) => {
+    const button = document.getElementById(device.button_id);
+    if (button) {
+      button.addEventListener("click", () => activateDevice(device));
     }
   });
+
+  // Controlla se c'è un errore di tempo all'avvio
+  checkTimeLimit().then((result) => {
+    if (result && result.error) {
+      showFatalError(result.error);
+    }
+  });
+
+  // Controlla periodicamente il limite di tempo
+  timeCheckInterval = setInterval(async () => {
+    const result = await checkTimeLimit();
+    if (result && result.error) {
+      showFatalError(result.error);
+      clearInterval(timeCheckInterval);
+    }
+  }, 5000);
 }
 
-// Avvio quando la pagina è caricata
-window.addEventListener("DOMContentLoaded", init);
+// Avvia l'applicazione quando il DOM è pronto
+document.addEventListener("DOMContentLoaded", init);
