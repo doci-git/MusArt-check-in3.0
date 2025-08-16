@@ -22,7 +22,7 @@ const MAX_CLICKS = 3;
 const BASE_URL_SET =
   "https://shelly-73-eu.shelly.cloud/v2/devices/api/set/switch";
 const CORRECT_CODE = "2245";
-const TIME_LIMIT_MINUTES = 2; // test rapido
+const TIME_LIMIT_MINUTES = 24; // test rapido
 const SECRET_KEY = "chiaveSegreta123";
 
 // --- Cookie utilities ---
@@ -124,6 +124,8 @@ async function accendiShelly(device) {
   clicksLeft--;
   setClicksLeft(device.cookie_key, clicksLeft);
   aggiornaStatoPulsante(device);
+
+  // Mostra popup SOLO dopo click
   showDevicePopup(device, clicksLeft);
 
   try {
@@ -143,7 +145,7 @@ async function accendiShelly(device) {
     if (data.error) {
       console.error(`Errore API: ${JSON.stringify(data.error)}`);
     } else {
-      console.log("acceso con successo!");
+      console.log("Acceso con successo!");
     }
   } catch (err) {
     console.error(`Errore fetch: ${err.message}`);
@@ -173,6 +175,7 @@ document.getElementById("btnCheckCode").onclick = async () => {
     document.getElementById("authCode").style.display = "none";
     document.getElementById("authCodeh3").style.display = "none";
     document.getElementById("btnCheckCode").style.display = "none";
+    document.getElementById("important").style.display = "none";
     abilitaPulsanti();
   } else {
     alert("Codice errato!");
