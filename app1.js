@@ -20,7 +20,7 @@ const MAX_CLICKS = 3;
 const BASE_URL_SET =
   "https://shelly-73-eu.shelly.cloud/v2/devices/api/set/switch";
 const CORRECT_CODE = "2245";
-const TIME_LIMIT_MINUTES = 40; // 2 minuti per testing
+const TIME_LIMIT_MINUTES = 1; // 2 minuti per testing
 const SECRET_KEY = "musart_secret_123_fixed_key";
 let timeCheckInterval;
 
@@ -138,6 +138,7 @@ function showSessionExpired() {
   // Nascondi pannello di controllo e mostra messaggio di sessione scaduta
   document.getElementById("controlPanel").classList.add("hidden");
   document.getElementById("sessionExpired").classList.remove("hidden");
+   document.getElementById("test2").style.display = "none";
 
   // Disabilita tutti i pulsanti
   DEVICES.forEach((device) => {
