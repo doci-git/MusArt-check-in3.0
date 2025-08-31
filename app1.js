@@ -20,7 +20,7 @@ const MAX_CLICKS = 3;
 const BASE_URL_SET =
   "https://shelly-73-eu.shelly.cloud/v2/devices/api/set/switch";
 const CORRECT_CODE = "2245";
-const TIME_LIMIT_MINUTES = 1; // 2 minuti per testing
+const TIME_LIMIT_MINUTES = 30; // 2 minuti per testing
 const SECRET_KEY = "musart_secret_123_fixed_key";
 let timeCheckInterval;
 
