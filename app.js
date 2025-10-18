@@ -1196,7 +1196,12 @@
 
   function showControlPanel() {
     const cp = qs("controlPanel");
-    if (cp) cp.style.display = "block";
+    if (cp) {
+      cp.classList.remove("hidden");
+      cp.style.display = "block";
+    }
+    const root = qs("test2");
+    if (root) root.style.display = "block";
     const ac = qs("authCode");
     if (ac) ac.style.display = "none";
     const af = qs("auth-form");
