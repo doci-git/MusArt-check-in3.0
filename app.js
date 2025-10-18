@@ -252,10 +252,20 @@
         10
       );
       if (serverCodeVer > localCodeVer) {
+        // Aggiorna versione locale
         localStorage.setItem(CODE_VERSION_KEY, String(serverCodeVer));
-        const msg =
-          s.global_block_message || "Codice aggiornato: accedi di nuovo";
-        forceGlobalLogout(msg);
+        // Se il dispositivo ha tracce di un link/token aperto, bloccalo.
+        // Altrimenti mostra il form di login senza blocco persistente.
+        if (hasTokenFootprint()) {
+          const msg = s.global_block_message || "Codice aggiornato: il link non e' piu' valido";
+          forceLogoutFromToken(msg);
+        } else {
+          unblockAccess();
+          qs("expiredOverlay")?.classList.add("hidden");
+          qs("sessionExpired")?.classList.add("hidden");
+          qs("controlPanel")?.classList.add("hidden");
+          resetSessionForNewCode();
+        }
         return;
       }
 
@@ -570,7 +580,6 @@
   }
 
   function checkCodeVersion() {
-    if (isTokenSession && currentTokenCustomCode) return;
     database
       .ref("settings/code_version")
       .once("value")
@@ -599,9 +608,15 @@
         if (codeSnap.exists()) {
           CORRECT_CODE = codeSnap.val();
           localStorage.setItem("secret_code", CORRECT_CODE);
-          blockAccess("Codice aggiornato: accedi di nuovo");
-          resetSessionForNewCode();
-          showSessionExpired();
+          if (hasTokenFootprint()) {
+            forceLogoutFromToken("Codice aggiornato: il link non e' piu' valido");
+          } else {
+            unblockAccess();
+            qs("expiredOverlay")?.classList.add("hidden");
+            qs("sessionExpired")?.classList.add("hidden");
+            qs("controlPanel")?.classList.add("hidden");
+            resetSessionForNewCode();
+          }
         }
       });
   }
@@ -859,6 +874,22 @@
     localStorage.removeItem("block_manual_login");
     localStorage.removeItem("blocked_reason");
     localStorage.removeItem("blocked_token");
+  }
+
+  function hasTokenFootprint() {
+    try {
+      if (isTokenSession) return true;
+      const urlTok = new URLSearchParams(window.location.search).get("token");
+      if (urlTok) return true;
+      if (localStorage.getItem("blocked_token")) return true;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf("token_ok_") === 0) return true;
+      }
+    } catch (e) {
+      console.warn("hasTokenFootprint check failed:", e);
+    }
+    return false;
   }
 
   function forceGlobalLogout(reason = "Codice aggiornato: accedi di nuovo") {
