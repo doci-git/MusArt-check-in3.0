@@ -1057,6 +1057,13 @@
 
     if (await checkTimeLimit()) return;
 
+    // Assicurati di nascondere eventuali overlay di scadenza
+    try {
+      qs("expiredOverlay")?.classList.add("hidden");
+      qs("sessionExpired")?.classList.add("hidden");
+      unblockAccess();
+    } catch {}
+
     showControlPanel();
     qs("checkinTimeInfo") && (qs("checkinTimeInfo").style.display = "block");
     updateCheckinTimeDisplay();
@@ -1081,6 +1088,10 @@
       try {
         if (currentTokenId)
           localStorage.setItem(`token_ok_${currentTokenId}`, "1");
+        // Nascondi qualsiasi overlay di scadenza eventualmente rimasto
+        qs("expiredOverlay")?.classList.add("hidden");
+        qs("sessionExpired")?.classList.add("hidden");
+        unblockAccess();
       } catch {}
       showControlPanel();
       return;
@@ -1194,6 +1205,9 @@
     if (bc) bc.style.display = "none";
     const imp = qs("important");
     if (imp) imp.style.display = "none";
+    // assicurati che eventuali overlay non coprano il pannello
+    qs("expiredOverlay")?.classList.add("hidden");
+    qs("sessionExpired")?.classList.add("hidden");
     const info = qs("checkinTimeInfo");
     if (info) info.style.display = "block";
     updateCheckinTimeDisplay();
