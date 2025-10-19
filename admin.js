@@ -28,7 +28,8 @@
   const ADMIN_DEVICES = Object.freeze([
     {
       id: "e4b063f0c38c",
-      auth_key: "",
+      auth_key:
+        "MWI2MDc4dWlk4908A71DA809FCEC05C5D1F360943FBFC6A7934EC0FD9E3CFEAF03F8F5A6A4A0C60665B97A1AA2E2",
       button_id: "btnOpenMainDoor",
       status_id: "mainDoorStatus",
       status_text_id: "mainDoorStatusText",
