@@ -862,9 +862,9 @@
         .ref("secure_links/" + token)
         .once("value");
       if (!snapshot.exists()) {
-        showTokenError("Token non valido");
+        showTokenError("Invalid token");
         try {
-          blockTokenOnly("Token non valido", token);
+          blockTokenOnly("Invalid token", token);
         } catch {}
         showSessionExpired();
         maybeCleanUrl();
@@ -872,11 +872,21 @@
       }
 
       const linkData = snapshot.val();
+
+      // Se questo token è stato bloccato su questo dispositivo (es. tempo sessione scaduto), non riattivarlo su refresh
+      if (isTokenDeviceBlocked(token)) {
+        const r = localStorage.getItem(`token_device_reason_${token}`) || "Sessione token scaduta su questo dispositivo";
+        showTokenError(r);
+        try { blockTokenOnly(r, token); } catch {}
+        showSessionExpired();
+        maybeCleanUrl();
+        return false;
+      }
       const isValid = validateSecureToken(linkData);
       if (!isValid.valid) {
         showTokenError(isValid.reason);
         try {
-          blockTokenOnly(isValid.reason || "Accesso bloccato", token);
+          blockTokenOnly(isValid.reason || "Access blocked", token);
         } catch {}
         showSessionExpired();
         maybeCleanUrl();
@@ -906,10 +916,10 @@
       startTokenRealtimeListener(token);
       return true;
     } catch (error) {
-      console.error("Errore nella verifica del token:", error);
-      showTokenError("Errore di verifica");
+      console.error("Token verification error:", error);
+      showTokenError("Verification error");
       try {
-        blockTokenOnly("Errore di verifica", token);
+        blockTokenOnly("Verification error", token);
       } catch {}
       showSessionExpired();
       maybeCleanUrl();
@@ -958,6 +968,34 @@
     localStorage.removeItem("blocked_token");
   }
 
+  // Flag di blocco per questo token su questo dispositivo
+  function markTokenDeviceBlocked(token, reason = "") {
+    try {
+      if (!token) return;
+      localStorage.setItem(`token_device_block_${token}`, "1");
+      if (reason) localStorage.setItem(`token_device_reason_${token}`, reason);
+    } catch (e) {
+      console.error("Errore markTokenDeviceBlocked:", e);
+    }
+  }
+
+  function isTokenDeviceBlocked(token) {
+    try {
+      if (!token) return false;
+      return localStorage.getItem(`token_device_block_${token}`) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function clearTokenDeviceBlock(token) {
+    try {
+      if (!token) return;
+      localStorage.removeItem(`token_device_block_${token}`);
+      localStorage.removeItem(`token_device_reason_${token}`);
+    } catch {}
+  }
+
   function hasTokenFootprint() {
     try {
       if (isTokenSession) return true;
@@ -1001,7 +1039,9 @@
       currentTokenId ||
       new URLSearchParams(location.search).get("token") ||
       null;
-    blockAccess(reason, t);
+    // Non bloccare globalmente il dispositivo per eventi legati a questo token
+    blockTokenOnly(reason, t);
+    if (t) markTokenDeviceBlocked(t, reason || "Sessione token scaduta");
     try {
       if (t) localStorage.removeItem(`token_ok_${t}`);
     } catch {}
@@ -1124,7 +1164,9 @@
         clearInterval(iv);
         isTokenSession = false;
         window.isTokenSession = false;
-        blockTokenOnly("Link scaduto", currentTokenId || null);
+        const t = currentTokenId || null;
+        blockTokenOnly("Link expired", t);
+        if (t) markTokenDeviceBlocked(t, "Link expired");
         showSessionExpired();
       }
     }, 1000);
@@ -1328,7 +1370,7 @@
     const expiredMessage = document.querySelector("#sessionExpired p");
     if (expiredMessage)
       expiredMessage.textContent =
-        "Il link di accesso è scaduto. Per accedere di nuovo, richiedi un nuovo link.";
+        "The access link has expired. To access again, request a new link.";
 
     const assistanceBtn = document.querySelector(
       "#sessionExpired .btn-whatsapp"
@@ -1337,7 +1379,7 @@
       assistanceBtn.href =
         "https://api.whatsapp.com/send?phone=+393898883634&text=Hi, I need a new access link";
       assistanceBtn.innerHTML =
-        '<i class="fab fa-whatsapp"></i> Richiedi nuovo link';
+        '<i class="fab fa-whatsapp"></i> Request new link';
     }
 
     const authCodeInput = qs("authCode");
