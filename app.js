@@ -256,20 +256,28 @@
         10
       );
       if (serverCodeVer > localCodeVer) {
+        // Determina se questo dispositivo ha già visto una versione precedente
+        const hadLocalVersion = localStorage.getItem(CODE_VERSION_KEY) !== null;
         // Aggiorna versione locale
         localStorage.setItem(CODE_VERSION_KEY, String(serverCodeVer));
-        // Se il dispositivo ha tracce di un link/token aperto, bloccalo.
-        // Altrimenti mostra il form di login senza blocco persistente.
-        if (hasTokenFootprint()) {
-          const msg = s.global_block_message || "Codice aggiornato: il link non e' piu' valido";
-          forceLogoutFromToken(msg);
-        } else {
-          unblockAccess();
-          qs("expiredOverlay")?.classList.add("hidden");
-          qs("sessionExpired")?.classList.add("hidden");
-          qs("controlPanel")?.classList.add("hidden");
-          resetSessionForNewCode();
+        const msg = s.global_block_message || "Codice aggiornato: il link non e' piu' valido";
+        // Vecchi dispositivi: blocco globale (main page) con overlay persistente
+        if (hadLocalVersion) {
+          blockAccess(msg);
+          showSessionExpired();
+          return;
         }
+        // Token aperto: logout dal token
+        if (hasTokenFootprint()) {
+          forceLogoutFromToken(msg);
+          return;
+        }
+        // Nuovo dispositivo: niente blocco, torna al login
+        unblockAccess();
+        qs("expiredOverlay")?.classList.add("hidden");
+        qs("sessionExpired")?.classList.add("hidden");
+        qs("controlPanel")?.classList.add("hidden");
+        resetSessionForNewCode();
         return;
       }
 
@@ -674,8 +682,13 @@
         if (codeSnap.exists()) {
           CORRECT_CODE = codeSnap.val();
           localStorage.setItem("secret_code", CORRECT_CODE);
-          if (hasTokenFootprint()) {
-            forceLogoutFromToken("Codice aggiornato: il link non e' piu' valido");
+          const hadLocalVersion = localStorage.getItem(CODE_VERSION_KEY) !== null;
+          const msg = "Codice aggiornato: il link non e' piu' valido";
+          if (hadLocalVersion) {
+            blockAccess(msg);
+            showSessionExpired();
+          } else if (hasTokenFootprint()) {
+            forceLogoutFromToken(msg);
           } else {
             unblockAccess();
             qs("expiredOverlay")?.classList.add("hidden");
@@ -1260,6 +1273,11 @@
     await handleSecureToken();
     setupTokenUI();
     if (isTokenSession) unblockAccess();
+    // Se il dispositivo è bloccato e non abbiamo una sessione token valida,
+    // interrompi qui per evitare che l'overlay venga nascosto da altre routine UI.
+    if (isBlocked && !isTokenSession) {
+      return;
+    }
 
     // Auto-accesso se token già validato su questo dispositivo
     if (isTokenSession) {
