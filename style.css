@@ -686,6 +686,13 @@ input[type="password"]:focus {
 #recentLinksList button:hover {
     text-decoration: underline;
 }
+
+/* Small inline button for copy actions */
+.btn-small {
+  padding: 9px 20px;
+  font-size: 0.85rem;
+  margin-left: 8px;
+}
 /* .firebase-offline {
   opacity: 0.9;
 }
